@@ -1,0 +1,43 @@
+# ============================================================
+# The output have been generated with the assistance of Claude at 2026-06-30T20:05:22Z UTC.
+# The content has been verified by the designated engineer.
+# ============================================================
+
+version: 2
+
+sources:
+  - name: ns
+    database: "{{ var('bronze_database') }}"
+    schema:   "{{ var('bronze_schema') }}"
+    description: "Bronze layer — raw NetSuite replica for Pinnacle Capital Partners."
+    tables:
+      - name: ACCOUNT
+        description: "Raw NetSuite ACCOUNT."
+      - name: ACCOUNTINGPERIOD
+        description: "Raw NetSuite ACCOUNTINGPERIOD."
+      - name: CLASSIFICATION
+        description: "Raw NetSuite CLASSIFICATION."
+      - name: CONSOLIDATEDEXCHANGERATE
+        description: "Raw NetSuite CONSOLIDATEDEXCHANGERATE."
+      - name: CURRENCY
+        description: "Raw NetSuite CURRENCY."
+      - name: DEPARTMENT
+        description: "Raw NetSuite DEPARTMENT."
+      - name: EMPLOYEE
+        description: "Raw NetSuite EMPLOYEE."
+      - name: ENTITY
+        description: "Raw NetSuite ENTITY."
+      - name: ITEM
+        description: "Raw NetSuite ITEM."
+      - name: LOCATION
+        description: "Raw NetSuite LOCATION."
+      - name: SUBSIDIARY
+        description: "Raw NetSuite SUBSIDIARY."
+      - name: TRANSACTION
+        description: "Raw NetSuite TRANSACTION."
+      - name: TRANSACTIONACCOUNTINGLINE
+        description: "Raw NetSuite TRANSACTIONACCOUNTINGLINE."
+      - name: TRANSACTIONLINE
+        description: "Raw NetSuite TRANSACTIONLINE."
+      - name: TRANSACTIONSTATUS
+        description: "Raw NetSuite TRANSACTIONSTATUS."

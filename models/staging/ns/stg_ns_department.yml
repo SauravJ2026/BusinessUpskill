@@ -1,0 +1,20 @@
+# ============================================================
+# The output have been generated with the assistance of Claude at 2026-06-30T20:04:50Z UTC.
+# The content has been verified by the designated engineer.
+# ============================================================
+
+version: 2
+
+models:
+  - name: stg_ns_department
+    description: "Silver staging — Department. Grain: 1 row per DEPARTMENT. Source: RAW.DEPARTMENT."
+    columns:
+      - name: SURROGATE_KEY
+        description: "MD5 surrogate primary key (sole PK)."
+        data_tests: [not_null, unique]
+      - name: SILVER_CREATED_ON_TS_UTC
+        description: "UTC timestamp of first Silver insert."
+        data_tests: [not_null]
+      - name: SILVER_UPDATED_ON_TS_UTC
+        description: "UTC timestamp of last Silver update."
+        data_tests: [not_null]
