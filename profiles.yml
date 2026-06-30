@@ -1,0 +1,20 @@
+# ============================================================
+# The output have been generated with the assistance of Claude at 2026-06-30T20:05:22Z UTC.
+# The content has been verified by the designated engineer.
+# ============================================================
+
+pcp:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account:   "{{ env_var('DBT_SF_ACCOUNT') }}"
+      user:      "{{ env_var('DBT_SF_USER') }}"
+      password:  "{{ env_var('DBT_SF_PASSWORD') }}"
+      role:      "{{ env_var('DBT_SF_ROLE') }}"
+      database:  "{{ env_var('DBT_SF_DATABASE', 'BUI_SAURAV_JHA_DB') }}"
+      warehouse: "{{ env_var('DBT_SF_WAREHOUSE') }}"
+      schema:    SILVER
+      threads:   4
+      client_session_keep_alive: false
+      query_tag: "{{ env_var('DBT_SF_QUERY_TAG', 'silver_dbt') }}"

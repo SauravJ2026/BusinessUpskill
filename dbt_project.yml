@@ -1,0 +1,46 @@
+# ============================================================
+# The output have been generated with the assistance of Claude at 2026-06-30T20:05:22Z UTC.
+# The content has been verified by the designated engineer.
+# ============================================================
+
+name: 'pcp_silver'
+version: '1.0.0'
+config-version: 2
+profile: 'pcp'
+
+model-paths:    ["models"]
+macro-paths:    ["macros"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+target-path:    "target"
+clean-targets:  ["target", "dbt_packages"]
+
+vars:
+  silver_database:  'BUI_SAURAV_JHA_DB'
+  bronze_database:  'BUI_SAURAV_JHA_DB'
+  bronze_schema:    'RAW'
+  environment:      'dev'
+  default_timezone: 'America/Los_Angeles'
+
+models:
+  pcp_silver:
+    staging:
+      +materialized:         incremental
+      +incremental_strategy: merge
+      +schema:               SILVER
+      +tags:                 ["silver", "staging"]
+      +on_schema_change:     fail
+      +full_refresh:         false
+
+data_tests:
+  +store_failures: true
+  +schema:         TEST_FAILURES
+
+# Snowflake stores unquoted identifiers in UPPERCASE; quoting=false yields
+# SILVER.STG_NS_<TABLE> (matching the LLD naming) and resolves RAW.<TABLE> sources.
+quoting:
+  database:   false
+  schema:     false
+  identifier: false
