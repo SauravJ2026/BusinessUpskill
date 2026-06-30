@@ -59,13 +59,13 @@ final AS (
             (SELECT MIN(existing.SILVER_CREATED_ON_TS_UTC)
              FROM {{ this }} existing
              WHERE existing.SURROGATE_KEY = renamed.SURROGATE_KEY),
-            {{ dbt.current_timestamp_in_utc() }}
+            SYSDATE()
         )                                                                    AS SILVER_CREATED_ON_TS_UTC,
         {% else %}
-        {{ dbt.current_timestamp_in_utc() }}                                 AS SILVER_CREATED_ON_TS_UTC,
+        SYSDATE()                                 AS SILVER_CREATED_ON_TS_UTC,
         {% endif %}
-        {{ dbt.current_timestamp_in_utc() }}                                 AS SILVER_UPDATED_ON_TS_UTC,
-        CAST(NULL AS {{ dbt.type_timestamp() }})                             AS SILVER_DELETED_ON_TS_UTC
+        SYSDATE()                                 AS SILVER_UPDATED_ON_TS_UTC,
+        CAST(NULL AS TIMESTAMP_NTZ)                             AS SILVER_DELETED_ON_TS_UTC
 
     FROM renamed
 
