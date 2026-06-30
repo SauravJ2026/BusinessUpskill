@@ -5,3 +5,4 @@ profiles.yml
 .user.yml
 .DS_Store
 __pycache__/
+dbt_internal_packages/
