@@ -40,9 +40,12 @@ WITH tal AS (SELECT * FROM {{ ref('stg_ns_transactionaccountingline') }}),
         WHERE IS_CURRENT = TRUE
      ),
      usd AS (
+        -- NOTE: the CURRENCY source flags SIX currencies as base (AUD, DKK, EUR, USD,
+        -- CAD, GBP) -- a source data-quality issue -- so IS_BASE_CURRENCY is unreliable.
+        -- Anchor the group reporting currency explicitly on USD by name.
         SELECT ID AS USD_CURRENCY_ID
         FROM {{ ref('d_currency') }}
-        WHERE IS_BASE_CURRENCY = TRUE
+        WHERE UPPER(TRIM(CURRENCY_NAME)) = 'USD'
         LIMIT 1
      ),
      cer AS (
