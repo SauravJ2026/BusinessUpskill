@@ -1,5 +1,5 @@
 -- ============================================================
--- The output has been generated with the assistance of Claude at 2026-07-01T04:51:55Z.
+-- The output has been generated with the assistance of Claude at 2026-07-01T05:20:08Z.
 -- The content has been verified by the designated engineer.
 -- ============================================================
 
@@ -15,10 +15,49 @@
 -- FACT_GENERAL_LEDGER | Transaction fact
 -- Grain: one row per transaction accounting line (posted GL entry)
 -- Source: SILVER.STG_NS_TRANSACTIONACCOUNTINGLINE enriched with TRANSACTIONLINE + TRANSACTION
+--
+-- MULTI-CURRENCY CONSOLIDATION (added):
+--   FUNCTIONAL_NET_AMOUNT = NET_AMOUNT as posted in the subsidiary's functional currency.
+--   REPORTING_NET_AMOUNT_USD = FUNCTIONAL_NET_AMOUNT * the correct period rate to USD.
+--   Rate type per case rules: AVERAGE for P&L accounts (Income/COGS/Expense),
+--   CURRENT for asset/liability accounts, HISTORICAL for equity. Rate comes from
+--   CONSOLIDATEDEXCHANGERATE (FROM = subsidiary functional currency, TO = base USD,
+--   matched on posting period). USD-functional subsidiaries use rate 1.0.
+--   FX_RATE_MATCHED flags lines where a rate (or USD) was found; unmatched foreign
+--   lines fall back to 1.0 and should be reviewed (rare / missing rate rows).
 
 WITH tal AS (SELECT * FROM {{ ref('stg_ns_transactionaccountingline') }}),
      tl  AS (SELECT * FROM {{ ref('stg_ns_transactionline') }}),
-     txn AS (SELECT * FROM {{ ref('stg_ns_transaction') }})
+     txn AS (SELECT * FROM {{ ref('stg_ns_transaction') }}),
+     sub AS (
+        SELECT ID AS SUBSIDIARY_ID, CURRENCY_ID
+        FROM {{ ref('stg_ns_subsidiary') }}
+        WHERE IS_ACTIVE = TRUE
+     ),
+     acct AS (
+        SELECT ID AS ACCOUNT_ID, UPPER(TRIM(ACCOUNT_TYPE)) AS ACCT_TYPE
+        FROM {{ ref('d_account') }}
+        WHERE IS_CURRENT = TRUE
+     ),
+     usd AS (
+        SELECT ID AS USD_CURRENCY_ID
+        FROM {{ ref('d_currency') }}
+        WHERE IS_BASE_CURRENCY = TRUE
+        LIMIT 1
+     ),
+     cer AS (
+        -- one rate row per (period, from-currency) to USD; averaged to avoid fan-out
+        SELECT
+            POSTING_PERIOD_ID,
+            FROM_CURRENCY_ID,
+            AVG(AVERAGE_RATE)    AS AVERAGE_RATE,
+            AVG(CURRENT_RATE)    AS CURRENT_RATE,
+            AVG(HISTORICAL_RATE) AS HISTORICAL_RATE
+        FROM {{ ref('stg_ns_consolidatedexchangerate') }}
+        WHERE IS_ACTIVE = TRUE
+          AND TO_CURRENCY_ID = (SELECT USD_CURRENCY_ID FROM usd)
+        GROUP BY POSTING_PERIOD_ID, FROM_CURRENCY_ID
+     )
 SELECT
     tal.SURROGATE_KEY                                                       AS GENERAL_LEDGER_KEY,
     TO_NUMBER(TO_CHAR(txn.TRANSACTION_DATE,'YYYYMMDD'))                      AS POSTING_DATE_KEY,
@@ -43,6 +82,37 @@ SELECT
     CAST(tal.AMOUNT_UNPAID AS NUMBER(18,4))                                  AS UNPAID_AMOUNT,
     CAST(tal.EXCHANGE_RATE AS NUMBER(10,6))                                  AS EXCHANGE_RATE,
     tal.IS_POSTING                                                          AS IS_POSTING,
+    -- ---------- multi-currency consolidation ----------
+    sub.CURRENCY_ID                                                         AS FUNCTIONAL_CURRENCY_ID,
+    CAST(tal.NET_AMOUNT AS NUMBER(18,4))                                     AS FUNCTIONAL_NET_AMOUNT,
+    CASE
+        WHEN acct.ACCT_TYPE IN ('INCOME','OTHINCOME','OTHER INCOME','REVENUE',
+                                'COGS','COST OF GOODS SOLD','COSTOFGOODSSOLD',
+                                'EXPENSE','OTHEXPENSE','OTHER EXPENSE') THEN 'AVERAGE'
+        WHEN acct.ACCT_TYPE = 'EQUITY'                                  THEN 'HISTORICAL'
+        ELSE 'CURRENT'
+    END                                                                     AS FX_RATE_TYPE,
+    CAST(
+        CASE
+            WHEN sub.CURRENCY_ID = (SELECT USD_CURRENCY_ID FROM usd) THEN 1.0
+            WHEN acct.ACCT_TYPE IN ('INCOME','OTHINCOME','OTHER INCOME','REVENUE',
+                                    'COGS','COST OF GOODS SOLD','COSTOFGOODSSOLD',
+                                    'EXPENSE','OTHEXPENSE','OTHER EXPENSE') THEN cer.AVERAGE_RATE
+            WHEN acct.ACCT_TYPE = 'EQUITY'                                  THEN cer.HISTORICAL_RATE
+            ELSE cer.CURRENT_RATE
+        END AS NUMBER(18,6))                                                AS FX_RATE_APPLIED,
+    CASE WHEN sub.CURRENCY_ID = (SELECT USD_CURRENCY_ID FROM usd)
+              OR cer.FROM_CURRENCY_ID IS NOT NULL THEN TRUE ELSE FALSE END   AS FX_RATE_MATCHED,
+    CAST(tal.NET_AMOUNT * COALESCE(
+        CASE
+            WHEN sub.CURRENCY_ID = (SELECT USD_CURRENCY_ID FROM usd) THEN 1.0
+            WHEN acct.ACCT_TYPE IN ('INCOME','OTHINCOME','OTHER INCOME','REVENUE',
+                                    'COGS','COST OF GOODS SOLD','COSTOFGOODSSOLD',
+                                    'EXPENSE','OTHEXPENSE','OTHER EXPENSE') THEN cer.AVERAGE_RATE
+            WHEN acct.ACCT_TYPE = 'EQUITY'                                  THEN cer.HISTORICAL_RATE
+            ELSE cer.CURRENT_RATE
+        END, 1.0) AS NUMBER(18,4))                                          AS REPORTING_NET_AMOUNT_USD,
+    -- --------------------------------------------------
     SYSDATE()                                                              AS DW_CREATED_AT,
     SYSDATE()                                                              AS DW_UPDATED_AT,
     'NETSUITE'                                                             AS DW_SOURCE_SYSTEM,
@@ -50,3 +120,7 @@ SELECT
 FROM tal
 LEFT JOIN tl  ON tal.TRANSACTION_ID = tl.TRANSACTION_ID AND tal.TRANSACTION_LINE_ID = tl.LINE_ID
 LEFT JOIN txn ON tal.TRANSACTION_ID = txn.ID
+LEFT JOIN sub ON tl.SUBSIDIARY_ID = sub.SUBSIDIARY_ID
+LEFT JOIN acct ON tal.ACCOUNT_ID = acct.ACCOUNT_ID
+LEFT JOIN cer ON cer.POSTING_PERIOD_ID = txn.POSTING_PERIOD_ID
+             AND cer.FROM_CURRENCY_ID  = sub.CURRENCY_ID
