@@ -1,5 +1,5 @@
 -- ============================================================
--- The output has been generated with the assistance of Claude at 2026-07-01T04:51:55Z.
+-- The output has been generated with the assistance of Claude at 2026-07-01T05:20:08Z.
 -- The content has been verified by the designated engineer.
 -- ============================================================
 
@@ -13,12 +13,14 @@
 }}
 
 -- FACT_BALANCE_SHEET | Periodic snapshot fact
--- Grain: one row per account per subsidiary per accounting period (period-end balance)
+-- Grain: one row per account x subsidiary x accounting period (period-end balance)
 -- Source: DERIVED from FACT_GENERAL_LEDGER + DIM_ACCOUNTING_PERIOD
+-- USD: REPORTING_NET_AMOUNT_USD from the GL fact is translated at CURRENT rate for
+--      asset/liability accounts and HISTORICAL for equity (applied in the GL fact).
 
 WITH gl AS (
     SELECT ACCOUNT_KEY, SUBSIDIARY_KEY, ACCOUNTING_PERIOD_KEY, CURRENCY_KEY,
-           DEBIT_AMOUNT, CREDIT_AMOUNT, NET_AMOUNT
+           DEBIT_AMOUNT, CREDIT_AMOUNT, NET_AMOUNT, REPORTING_NET_AMOUNT_USD
     FROM {{ ref('f_general_ledger') }}
 ),
 per AS (
@@ -28,10 +30,11 @@ per AS (
 agg AS (
     SELECT
         ACCOUNT_KEY, SUBSIDIARY_KEY, ACCOUNTING_PERIOD_KEY,
-        MAX(CURRENCY_KEY)                    AS CURRENCY_KEY,
-        SUM(DEBIT_AMOUNT)                    AS PERIOD_DEBIT_AMOUNT,
-        SUM(CREDIT_AMOUNT)                   AS PERIOD_CREDIT_AMOUNT,
-        SUM(NET_AMOUNT)                      AS PERIOD_NET_AMOUNT
+        MAX(CURRENCY_KEY)                AS CURRENCY_KEY,
+        SUM(DEBIT_AMOUNT)                AS PERIOD_DEBIT_AMOUNT,
+        SUM(CREDIT_AMOUNT)               AS PERIOD_CREDIT_AMOUNT,
+        SUM(NET_AMOUNT)                  AS PERIOD_NET_AMOUNT,
+        SUM(REPORTING_NET_AMOUNT_USD)    AS PERIOD_NET_AMOUNT_USD
     FROM gl
     GROUP BY ACCOUNT_KEY, SUBSIDIARY_KEY, ACCOUNTING_PERIOD_KEY
 ),
@@ -53,6 +56,11 @@ SELECT
         PARTITION BY ACCOUNT_KEY, SUBSIDIARY_KEY
         ORDER BY PERIOD_END_DATE
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS NUMBER(18,4))  AS ENDING_BALANCE_AMOUNT,
+    CAST(PERIOD_NET_AMOUNT_USD AS NUMBER(18,4))                            AS PERIOD_NET_AMOUNT_USD,
+    CAST(SUM(PERIOD_NET_AMOUNT_USD) OVER (
+        PARTITION BY ACCOUNT_KEY, SUBSIDIARY_KEY
+        ORDER BY PERIOD_END_DATE
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS NUMBER(18,4))  AS ENDING_BALANCE_AMOUNT_USD,
     SYSDATE()                                                              AS DW_CREATED_AT,
     SYSDATE()                                                              AS DW_UPDATED_AT,
     'NETSUITE'                                                             AS DW_SOURCE_SYSTEM,
