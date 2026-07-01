@@ -5,20 +5,13 @@
 --
 -- FACT_INCOME_STATEMENT | Derived P&L fact
 -- Grain: one row per SUBSIDIARY x ACCOUNTING_PERIOD x DEPARTMENT x CLASS.
--- Source: F_GENERAL_LEDGER filtered to P&L account types, joined to
---         D_ACCOUNT (current version) for ACCOUNT_TYPE.
--- Account-type filter: Income/OthIncome (revenue), COGS, Expense/OthExpense (opex).
---
--- MEASURE SOURCE: NET_AMOUNT. In this NetSuite extract the DEBIT/CREDIT columns
--- are empty; the signed posted figure lives in NET_AMOUNT (net = debit - credit,
--- same convention F_BALANCE_SHEET uses). Income accounts carry credit balances,
--- so NET_AMOUNT is negative for revenue -> negated below to show revenue positive.
--- FX: transaction currency, same basis as F_GENERAL_LEDGER / F_BALANCE_SHEET
---     (USD consolidation via CONSOLIDATEDEXCHANGERATE is a separate open item).
---
--- >>> VERIFY: if revenue comes back negative, flip the two signs in the CASE
---     (income -> +NET_AMOUNT, cost -> -NET_AMOUNT). EBITDA/NET_INCOME are
---     simplified (gross_profit - opex; no separate D&A / interest / tax split).
+-- Source: F_GENERAL_LEDGER filtered to P&L account types.
+-- Measures come in two currencies:
+--   *_ (functional): NET_AMOUNT as posted in the subsidiary currency.
+--   *_USD: REPORTING_NET_AMOUNT_USD, already translated at AVERAGE rate in the GL
+--          fact (P&L accounts use the average period rate per case rules).
+-- Income accounts carry credit balances (negative net) -> negated for positive revenue.
+-- EBITDA / NET_INCOME are simplified (gross_profit - opex).
 -- ============================================================
 
 {{
@@ -37,7 +30,8 @@ WITH gl AS (
         DEPARTMENT_KEY,
         CLASS_KEY,
         ACCOUNT_KEY,
-        NET_AMOUNT
+        NET_AMOUNT,
+        REPORTING_NET_AMOUNT_USD
     FROM {{ ref('f_general_ledger') }}
 ),
 acct AS (
@@ -52,6 +46,7 @@ joined AS (
         gl.DEPARTMENT_KEY,
         gl.CLASS_KEY,
         gl.NET_AMOUNT,
+        gl.REPORTING_NET_AMOUNT_USD,
         CASE
             WHEN acct.ACCT_TYPE IN ('INCOME','OTHINCOME','OTHER INCOME','REVENUE')            THEN 'REVENUE'
             WHEN acct.ACCT_TYPE IN ('COGS','COST OF GOODS SOLD','COSTOFGOODSSOLD')            THEN 'COGS'
@@ -67,10 +62,12 @@ agg AS (
         ACCOUNTING_PERIOD_KEY,
         DEPARTMENT_KEY,
         CLASS_KEY,
-        -- Income accounts carry credit balances (negative net) -> negate for positive revenue.
-        SUM(CASE WHEN PL_BUCKET = 'REVENUE' THEN -NET_AMOUNT ELSE 0 END) AS REVENUE,
-        SUM(CASE WHEN PL_BUCKET = 'COGS'    THEN  NET_AMOUNT ELSE 0 END) AS COGS,
-        SUM(CASE WHEN PL_BUCKET = 'OPEX'    THEN  NET_AMOUNT ELSE 0 END) AS OPERATING_EXPENSE
+        SUM(CASE WHEN PL_BUCKET = 'REVENUE' THEN -NET_AMOUNT ELSE 0 END)               AS REVENUE,
+        SUM(CASE WHEN PL_BUCKET = 'COGS'    THEN  NET_AMOUNT ELSE 0 END)               AS COGS,
+        SUM(CASE WHEN PL_BUCKET = 'OPEX'    THEN  NET_AMOUNT ELSE 0 END)               AS OPERATING_EXPENSE,
+        SUM(CASE WHEN PL_BUCKET = 'REVENUE' THEN -REPORTING_NET_AMOUNT_USD ELSE 0 END) AS REVENUE_USD,
+        SUM(CASE WHEN PL_BUCKET = 'COGS'    THEN  REPORTING_NET_AMOUNT_USD ELSE 0 END) AS COGS_USD,
+        SUM(CASE WHEN PL_BUCKET = 'OPEX'    THEN  REPORTING_NET_AMOUNT_USD ELSE 0 END) AS OPERATING_EXPENSE_USD
     FROM joined
     WHERE PL_BUCKET <> 'NON_PL'
     GROUP BY SUBSIDIARY_KEY, ACCOUNTING_PERIOD_KEY, DEPARTMENT_KEY, CLASS_KEY
@@ -81,14 +78,22 @@ SELECT
     ACCOUNTING_PERIOD_KEY,
     DEPARTMENT_KEY,
     CLASS_KEY,
+    -- functional currency
     CAST(REVENUE           AS NUMBER(18,4)) AS REVENUE,
     CAST(COGS              AS NUMBER(18,4)) AS COGS,
     CAST(REVENUE - COGS    AS NUMBER(18,4)) AS GROSS_PROFIT,
-    CAST(CASE WHEN REVENUE = 0 THEN NULL
-             ELSE (REVENUE - COGS) / REVENUE END AS NUMBER(18,6)) AS GROSS_MARGIN_PCT,
+    CAST(CASE WHEN REVENUE = 0 THEN NULL ELSE (REVENUE - COGS) / REVENUE END AS NUMBER(18,6)) AS GROSS_MARGIN_PCT,
     CAST(OPERATING_EXPENSE AS NUMBER(18,4)) AS OPERATING_EXPENSE,
-    CAST(REVENUE - COGS - OPERATING_EXPENSE AS NUMBER(18,4)) AS EBITDA,      -- simplified
-    CAST(REVENUE - COGS - OPERATING_EXPENSE AS NUMBER(18,4)) AS NET_INCOME,  -- simplified
+    CAST(REVENUE - COGS - OPERATING_EXPENSE AS NUMBER(18,4)) AS EBITDA,
+    CAST(REVENUE - COGS - OPERATING_EXPENSE AS NUMBER(18,4)) AS NET_INCOME,
+    -- USD consolidated
+    CAST(REVENUE_USD           AS NUMBER(18,4)) AS REVENUE_USD,
+    CAST(COGS_USD              AS NUMBER(18,4)) AS COGS_USD,
+    CAST(REVENUE_USD - COGS_USD AS NUMBER(18,4)) AS GROSS_PROFIT_USD,
+    CAST(CASE WHEN REVENUE_USD = 0 THEN NULL ELSE (REVENUE_USD - COGS_USD) / REVENUE_USD END AS NUMBER(18,6)) AS GROSS_MARGIN_PCT_USD,
+    CAST(OPERATING_EXPENSE_USD AS NUMBER(18,4)) AS OPERATING_EXPENSE_USD,
+    CAST(REVENUE_USD - COGS_USD - OPERATING_EXPENSE_USD AS NUMBER(18,4)) AS EBITDA_USD,
+    CAST(REVENUE_USD - COGS_USD - OPERATING_EXPENSE_USD AS NUMBER(18,4)) AS NET_INCOME_USD,
     SYSDATE()             AS DW_CREATED_AT,
     SYSDATE()             AS DW_UPDATED_AT,
     'NETSUITE'            AS DW_SOURCE_SYSTEM,
