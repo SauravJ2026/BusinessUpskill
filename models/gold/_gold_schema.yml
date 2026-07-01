@@ -1,0 +1,63 @@
+version: 2
+
+models:
+  - name: d_account
+    columns:
+      - name: ACCOUNT_KEY
+        tests: [not_null, unique]
+  - name: d_accounting_period
+    columns:
+      - name: ACCOUNTING_PERIOD_KEY
+        tests: [not_null, unique]
+  - name: d_subsidiary
+    columns:
+      - name: SUBSIDIARY_KEY
+        tests: [not_null, unique]
+  - name: d_department
+    columns:
+      - name: DEPARTMENT_KEY
+        tests: [not_null, unique]
+  - name: d_class
+    columns:
+      - name: CLASS_KEY
+        tests: [not_null, unique]
+  - name: d_location
+    columns:
+      - name: LOCATION_KEY
+        tests: [not_null, unique]
+  - name: d_item
+    columns:
+      - name: ITEM_KEY
+        tests: [not_null, unique]
+  - name: d_entity
+    columns:
+      - name: ENTITY_KEY
+        tests: [not_null, unique]
+  - name: d_employee
+    columns:
+      - name: EMPLOYEE_KEY
+        tests: [not_null, unique]
+  - name: d_currency
+    columns:
+      - name: CURRENCY_KEY
+        tests: [not_null, unique]
+  - name: d_transaction
+    columns:
+      - name: TRANSACTION_KEY
+        tests: [not_null, unique]
+  - name: d_transaction_status
+    columns:
+      - name: TRANSACTION_STATUS_KEY
+        tests: [not_null, unique]
+  - name: d_date
+    columns:
+      - name: DATE_KEY
+        tests: [not_null, unique]
+  - name: f_general_ledger
+    columns:
+      - name: GENERAL_LEDGER_KEY
+        tests: [not_null, unique]
+  - name: f_balance_sheet
+    columns:
+      - name: BALANCE_SHEET_KEY
+        tests: [not_null, unique]
