@@ -7,20 +7,18 @@
 -- Grain: one row per SUBSIDIARY x ACCOUNTING_PERIOD x DEPARTMENT x CLASS.
 -- Source: F_GENERAL_LEDGER filtered to P&L account types, joined to
 --         D_ACCOUNT (current version) for ACCOUNT_TYPE.
--- Account-type filter: Income / COGS / Expense (Asset/Liability/Equity excluded).
--- FX: amounts are in transaction currency, same basis as F_GENERAL_LEDGER and
---     F_BALANCE_SHEET (USD consolidation via CONSOLIDATEDEXCHANGERATE is a
---     separate, still-open item -- see README).
+-- Account-type filter: Income/OthIncome (revenue), COGS, Expense/OthExpense (opex).
 --
--- >>> VERIFY BEFORE GRADING <<<
---   1. ACCOUNT_TYPE values: the CASE below matches common NetSuite labels/codes.
---      Run  SELECT DISTINCT ACCOUNT_TYPE FROM GOLD.D_ACCOUNT;  and confirm every
---      Income/COGS/Expense value is captured. A missed value silently drops from the P&L.
---   2. Sign convention: revenue = credits - debits (income accounts carry credit
---      balances); cost = debits - credits. If your reference answer flips a sign,
---      swap the two inside the relevant CASE.
---   3. EBITDA / NET_INCOME are simplified (gross_profit - opex). True EBITDA excludes
---      depreciation, amortization, interest and tax, which need finer account tagging.
+-- MEASURE SOURCE: NET_AMOUNT. In this NetSuite extract the DEBIT/CREDIT columns
+-- are empty; the signed posted figure lives in NET_AMOUNT (net = debit - credit,
+-- same convention F_BALANCE_SHEET uses). Income accounts carry credit balances,
+-- so NET_AMOUNT is negative for revenue -> negated below to show revenue positive.
+-- FX: transaction currency, same basis as F_GENERAL_LEDGER / F_BALANCE_SHEET
+--     (USD consolidation via CONSOLIDATEDEXCHANGERATE is a separate open item).
+--
+-- >>> VERIFY: if revenue comes back negative, flip the two signs in the CASE
+--     (income -> +NET_AMOUNT, cost -> -NET_AMOUNT). EBITDA/NET_INCOME are
+--     simplified (gross_profit - opex; no separate D&A / interest / tax split).
 -- ============================================================
 
 {{
@@ -39,8 +37,7 @@ WITH gl AS (
         DEPARTMENT_KEY,
         CLASS_KEY,
         ACCOUNT_KEY,
-        DEBIT_AMOUNT,
-        CREDIT_AMOUNT
+        NET_AMOUNT
     FROM {{ ref('f_general_ledger') }}
 ),
 acct AS (
@@ -54,9 +51,7 @@ joined AS (
         gl.ACCOUNTING_PERIOD_KEY,
         gl.DEPARTMENT_KEY,
         gl.CLASS_KEY,
-        gl.DEBIT_AMOUNT,
-        gl.CREDIT_AMOUNT,
-        acct.ACCT_TYPE,
+        gl.NET_AMOUNT,
         CASE
             WHEN acct.ACCT_TYPE IN ('INCOME','OTHINCOME','OTHER INCOME','REVENUE')            THEN 'REVENUE'
             WHEN acct.ACCT_TYPE IN ('COGS','COST OF GOODS SOLD','COSTOFGOODSSOLD')            THEN 'COGS'
@@ -72,9 +67,10 @@ agg AS (
         ACCOUNTING_PERIOD_KEY,
         DEPARTMENT_KEY,
         CLASS_KEY,
-        SUM(CASE WHEN PL_BUCKET = 'REVENUE' THEN CREDIT_AMOUNT - DEBIT_AMOUNT ELSE 0 END) AS REVENUE,
-        SUM(CASE WHEN PL_BUCKET = 'COGS'    THEN DEBIT_AMOUNT - CREDIT_AMOUNT ELSE 0 END) AS COGS,
-        SUM(CASE WHEN PL_BUCKET = 'OPEX'    THEN DEBIT_AMOUNT - CREDIT_AMOUNT ELSE 0 END) AS OPERATING_EXPENSE
+        -- Income accounts carry credit balances (negative net) -> negate for positive revenue.
+        SUM(CASE WHEN PL_BUCKET = 'REVENUE' THEN -NET_AMOUNT ELSE 0 END) AS REVENUE,
+        SUM(CASE WHEN PL_BUCKET = 'COGS'    THEN  NET_AMOUNT ELSE 0 END) AS COGS,
+        SUM(CASE WHEN PL_BUCKET = 'OPEX'    THEN  NET_AMOUNT ELSE 0 END) AS OPERATING_EXPENSE
     FROM joined
     WHERE PL_BUCKET <> 'NON_PL'
     GROUP BY SUBSIDIARY_KEY, ACCOUNTING_PERIOD_KEY, DEPARTMENT_KEY, CLASS_KEY
