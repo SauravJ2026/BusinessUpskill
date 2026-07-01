@@ -1,0 +1,8 @@
+version: 2
+
+models:
+  - name: f_income_statement
+    description: "Derived P&L. Grain: subsidiary x period x department x class. Revenue/COGS/OpEx pivoted from GL by account type."
+    columns:
+      - name: INCOME_STATEMENT_KEY
+        tests: [not_null, unique]
